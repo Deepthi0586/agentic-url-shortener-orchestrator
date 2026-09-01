@@ -1,0 +1,23 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'com.saigangili.orchestrator.cli.OrchestratorCli'
+}
+
+dependencies {
+    // JSON (not a DB) for orchestrator state — single-process, low-concurrency, whole-object read/write
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2'
+
+    // Plain JDK HttpClient is used for LLM calls — no SDK dependency needed.
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+    testImplementation 'org.mockito:mockito-core:5.14.1'
+}
+
+tasks.named('run') {
+    standardInput = System.in
+    workingDir = rootProject.projectDir
+}
