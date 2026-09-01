@@ -60,6 +60,9 @@ for how this would be structured in production.
    ./gradlew :shortener-service:bootRun
 ```
 
+# Extend an existing feature with authentication (brownfield)
+./gradlew :orchestrator:run --args="BROWNFIELD 'Add JWT-based bearer token authentication to the URL shortener management endpoints, keeping the redirect endpoint unauthenticated'" --console=plain
+
 See `scenarios/` for saved logs of all three scenarios already run,
 `docs/testing-approach.md` for how the system was tested (orchestrator
 logic, LLM integration, generated code) plus limitations and
@@ -75,3 +78,16 @@ generation, and test generation/execution. Documentation and Release
 Readiness remain rule-based (see limitations in
 `docs/final-engineering-summary.md`). All three required scenarios
 (greenfield, brownfield, ambiguous) have been run end-to-end.
+
+## Extensions
+
+Since the original submission, the orchestrator was used to add a real
+new feature — JWT-based bearer token authentication on the URL
+shortener's management endpoints (create, retrieve metadata, delete),
+while keeping the public redirect endpoint unauthenticated. This was
+run as a new brownfield scenario: the Codebase Reasoning stage analyzed
+the existing service, Design proposed the API contract and data model,
+Implementation generated the Spring Security and JJWT integration, and
+Testing generated and ran 12 real tests, all passing.
+
+See `scenarios/jwt-auth-brownfield-run.json` for the full run evidence.
