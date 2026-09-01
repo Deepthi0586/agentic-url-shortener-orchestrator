@@ -1,170 +1,125 @@
 package com.saigangili.shortener.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.saigangili.shortener.model.ShortUrl;
+import com.saigangili.shortener.repository.ShortUrlRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+import java.util.NoSuchElementException;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.saigangili.shortener.model.UrlMapping;
-import com.saigangili.shortener.repository.UrlMappingRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
-import java.lang.reflect.Field;
-import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 class ShortUrlServiceTest {
 
-    private UrlMappingRepository repository;
-    private EntityManager entityManager;
-    private ShortUrlService service;
+    @Mock
+    private ShortUrlRepository shortUrlRepository;
+
+    private ShortUrlService shortUrlService;
 
     @BeforeEach
-    void setUp() throws Exception {
-        repository = mock(UrlMappingRepository.class);
-        entityManager = mock(EntityManager.class);
-        service = new ShortUrlService(repository);
-
-        Field emField = ShortUrlService.class.getDeclaredField("entityManager");
-        emField.setAccessible(true);
-        emField.set(service, entityManager);
-    }
-
-    private void mockSequence(long value) {
-        Query query = mock(Query.class);
-        when(entityManager.createNativeQuery(anyString())).thenReturn(query);
-        when(query.getSingleResult()).thenReturn(value);
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        shortUrlService = new ShortUrlService(shortUrlRepository);
     }
 
     @Test
-    void createShortUrl_generatesBase62CodeWhenNoCustomAlias() {
-        mockSequence(125L); // base62 encoding of 125 = "21"
-        when(repository.save(any(UrlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+    void createShortUrl_generatesUniqueCodeAndSaves() {
+        when(shortUrlRepository.existsByCode(anyString())).thenReturn(false);
+        when(shortUrlRepository.save(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        UrlMapping result = service.createShortUrl("https://example.com", null, "owner1");
+        ShortUrl result = shortUrlService.createShortUrl("https://example.com", "meta");
 
-        assertThat(result.getShortCode()).isEqualTo("21");
-        assertThat(result.isCustomAlias()).isFalse();
-        assertThat(result.getLongUrl()).isEqualTo("https://example.com");
-        assertThat(result.getOwnerId()).isEqualTo("owner1");
-        verify(repository, never()).existsByShortCode(anyString());
-        verify(repository, times(1)).save(any(UrlMapping.class));
+        assertNotNull(result);
+        assertEquals("https://example.com", result.getOriginalUrl());
+        assertEquals("meta", result.getMetadata());
+        assertNotNull(result.getCode());
+        assertEquals(7, result.getCode().length());
+        assertNotNull(result.getCreatedAt());
+
+        ArgumentCaptor<ShortUrl> captor = ArgumentCaptor.forClass(ShortUrl.class);
+        verify(shortUrlRepository, times(1)).save(captor.capture());
+        assertEquals(result.getCode(), captor.getValue().getCode());
     }
 
     @Test
-    void createShortUrl_encodesZeroAsFirstAlphabetChar() {
-        mockSequence(0L);
-        when(repository.save(any(UrlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+    void createShortUrl_retriesOnCollisionUntilUniqueCodeFound() {
+        when(shortUrlRepository.existsByCode(anyString()))
+                .thenReturn(true)
+                .thenReturn(true)
+                .thenReturn(false);
+        when(shortUrlRepository.save(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        UrlMapping result = service.createShortUrl("https://zero.com", null, "owner1");
+        ShortUrl result = shortUrlService.createShortUrl("https://retry.com", null);
 
-        assertThat(result.getShortCode()).isEqualTo("0");
+        assertNotNull(result);
+        verify(shortUrlRepository, times(3)).existsByCode(anyString());
+        verify(shortUrlRepository, times(1)).save(any(ShortUrl.class));
     }
 
     @Test
-    void createShortUrl_usesCustomAliasWhenAvailable() {
-        when(repository.existsByShortCode("myalias")).thenReturn(false);
-        when(repository.save(any(UrlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
+    void getByCode_returnsShortUrlWhenFound() {
+        ShortUrl existing = new ShortUrl("abc1234", "https://found.com", java.time.Instant.now(), null);
+        when(shortUrlRepository.findByCode("abc1234")).thenReturn(Optional.of(existing));
 
-        UrlMapping result = service.createShortUrl("https://example.com", "myalias", "owner1");
+        ShortUrl result = shortUrlService.getByCode("abc1234");
 
-        assertThat(result.getShortCode()).isEqualTo("myalias");
-        assertThat(result.isCustomAlias()).isTrue();
-        verify(entityManager, never()).createNativeQuery(anyString());
+        assertEquals(existing, result);
     }
 
     @Test
-    void createShortUrl_throwsWhenCustomAliasAlreadyInUse() {
-        when(repository.existsByShortCode("taken")).thenReturn(true);
+    void getByCode_throwsWhenNotFound() {
+        when(shortUrlRepository.findByCode("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.createShortUrl("https://example.com", "taken", "owner1"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("taken");
-
-        verify(repository, never()).save(any(UrlMapping.class));
+        NoSuchElementException ex = assertThrows(NoSuchElementException.class,
+                () -> shortUrlService.getByCode("missing"));
+        assertEquals("Short URL not found for code: missing", ex.getMessage());
     }
 
     @Test
-    void resolveLongUrl_returnsLongUrlWhenActive() {
-        UrlMapping mapping = new UrlMapping("abc", "https://target.com", "owner1", false);
-        when(repository.findByShortCode("abc")).thenReturn(Optional.of(mapping));
+    void resolveRedirectUrl_returnsOriginalUrl() {
+        ShortUrl existing = new ShortUrl("xyz9999", "https://redirect-target.com", java.time.Instant.now(), null);
+        when(shortUrlRepository.findByCode("xyz9999")).thenReturn(Optional.of(existing));
 
-        String longUrl = service.resolveLongUrl("abc");
+        String url = shortUrlService.resolveRedirectUrl("xyz9999");
 
-        assertThat(longUrl).isEqualTo("https://target.com");
+        assertEquals("https://redirect-target.com", url);
     }
 
     @Test
-    void resolveLongUrl_throwsWhenNotFound() {
-        when(repository.findByShortCode("missing")).thenReturn(Optional.empty());
+    void resolveRedirectUrl_throwsWhenNotFound() {
+        when(shortUrlRepository.findByCode("nope")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.resolveLongUrl("missing"))
-                .isInstanceOf(ShortUrlService.NoSuchElementException.class);
+        assertThrows(NoSuchElementException.class, () -> shortUrlService.resolveRedirectUrl("nope"));
     }
 
     @Test
-    void resolveLongUrl_throwsWhenDeleted() {
-        UrlMapping mapping = new UrlMapping("abc", "https://target.com", "owner1", false);
-        mapping.setStatus(UrlMapping.Status.DELETED);
-        when(repository.findByShortCode("abc")).thenReturn(Optional.of(mapping));
+    void deleteByCode_deletesWhenExists() {
+        when(shortUrlRepository.existsByCode("exists1")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.resolveLongUrl("abc"))
-                .isInstanceOf(ShortUrlService.NoSuchElementException.class);
+        shortUrlService.deleteByCode("exists1");
+
+        verify(shortUrlRepository, times(1)).deleteByCode("exists1");
     }
 
     @Test
-    void getMetadata_returnsMappingWhenActive() {
-        UrlMapping mapping = new UrlMapping("abc", "https://target.com", "owner1", false);
-        when(repository.findByShortCode("abc")).thenReturn(Optional.of(mapping));
+    void deleteByCode_throwsWhenNotFoundAndDoesNotCallDelete() {
+        when(shortUrlRepository.existsByCode("missing1")).thenReturn(false);
 
-        UrlMapping result = service.getMetadata("abc");
-
-        assertThat(result).isSameAs(mapping);
-    }
-
-    @Test
-    void getMetadata_throwsWhenNotFound() {
-        when(repository.findByShortCode("missing")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.getMetadata("missing"))
-                .isInstanceOf(ShortUrlService.NoSuchElementException.class);
-    }
-
-    @Test
-    void deleteShortUrl_marksAsDeletedWhenOwnerMatches() {
-        UrlMapping mapping = new UrlMapping("abc", "https://target.com", "owner1", false);
-        when(repository.findByShortCode("abc")).thenReturn(Optional.of(mapping));
-        when(repository.save(any(UrlMapping.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        service.deleteShortUrl("abc", "owner1");
-
-        assertThat(mapping.getStatus()).isEqualTo(UrlMapping.Status.DELETED);
-        verify(repository, times(1)).save(mapping);
-    }
-
-    @Test
-    void deleteShortUrl_throwsSecurityExceptionWhenOwnerMismatch() {
-        UrlMapping mapping = new UrlMapping("abc", "https://target.com", "owner1", false);
-        when(repository.findByShortCode("abc")).thenReturn(Optional.of(mapping));
-
-        assertThatThrownBy(() -> service.deleteShortUrl("abc", "otherOwner"))
-                .isInstanceOf(SecurityException.class);
-
-        assertThat(mapping.getStatus()).isEqualTo(UrlMapping.Status.ACTIVE);
-        verify(repository, never()).save(any(UrlMapping.class));
-    }
-
-    @Test
-    void deleteShortUrl_throwsNotFoundWhenMissing() {
-        when(repository.findByShortCode("missing")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.deleteShortUrl("missing", "owner1"))
-                .isInstanceOf(ShortUrlService.NoSuchElementException.class);
+        NoSuchElementException ex = assertThrows(NoSuchElementException.class,
+                () -> shortUrlService.deleteByCode("missing1"));
+        assertEquals("Short URL not found for code: missing1", ex.getMessage());
+        verify(shortUrlRepository, never()).deleteByCode(anyString());
     }
 }

@@ -9,7 +9,9 @@ import java.util.Optional;
 @Repository
 public interface ShortUrlRepository extends JpaRepository<ShortUrl, Long> {
 
-    Optional<ShortUrl> findByShortCode(String shortCode);
+    Optional<ShortUrl> findByCode(String code);
 
-    boolean existsByShortCode(String shortCode);
+    boolean existsByCode(String code);
+
+    void deleteByCode(String code);
 }

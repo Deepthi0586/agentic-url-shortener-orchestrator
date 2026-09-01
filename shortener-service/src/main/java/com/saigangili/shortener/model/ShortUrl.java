@@ -1,42 +1,42 @@
 package com.saigangili.shortener.model;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
 import java.time.Instant;
 
 @Entity
-@Table(name = "short_urls", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_short_code", columnNames = "short_code")
-})
+@Table(name = "short_url")
 public class ShortUrl {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "short_code", nullable = false, unique = true, length = 64)
-    private String shortCode;
+    @Column(nullable = false, unique = true)
+    private String code;
 
-    @Column(name = "target_url", nullable = false, length = 2048)
-    private String targetUrl;
+    @Column(nullable = false, length = 2048)
+    private String originalUrl;
 
-    @Column(name = "is_custom", nullable = false)
-    private boolean isCustom;
-
-    @Column(name = "created_by")
-    private String createdBy;
-
-    @Column(name = "created_at", nullable = false)
+    @Column(nullable = false)
     private Instant createdAt;
+
+    @Column
+    private String metadata;
 
     public ShortUrl() {
     }
 
-    public ShortUrl(String shortCode, String targetUrl, boolean isCustom, String createdBy) {
-        this.shortCode = shortCode;
-        this.targetUrl = targetUrl;
-        this.isCustom = isCustom;
-        this.createdBy = createdBy;
-        this.createdAt = Instant.now();
+    public ShortUrl(String code, String originalUrl, Instant createdAt, String metadata) {
+        this.code = code;
+        this.originalUrl = originalUrl;
+        this.createdAt = createdAt;
+        this.metadata = metadata;
     }
 
     public Long getId() {
@@ -47,36 +47,20 @@ public class ShortUrl {
         this.id = id;
     }
 
-    public String getShortCode() {
-        return shortCode;
+    public String getCode() {
+        return code;
     }
 
-    public void setShortCode(String shortCode) {
-        this.shortCode = shortCode;
+    public void setCode(String code) {
+        this.code = code;
     }
 
-    public String getTargetUrl() {
-        return targetUrl;
+    public String getOriginalUrl() {
+        return originalUrl;
     }
 
-    public void setTargetUrl(String targetUrl) {
-        this.targetUrl = targetUrl;
-    }
-
-    public boolean isCustom() {
-        return isCustom;
-    }
-
-    public void setCustom(boolean custom) {
-        isCustom = custom;
-    }
-
-    public String getCreatedBy() {
-        return createdBy;
-    }
-
-    public void setCreatedBy(String createdBy) {
-        this.createdBy = createdBy;
+    public void setOriginalUrl(String originalUrl) {
+        this.originalUrl = originalUrl;
     }
 
     public Instant getCreatedAt() {
@@ -85,5 +69,13 @@ public class ShortUrl {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(String metadata) {
+        this.metadata = metadata;
     }
 }

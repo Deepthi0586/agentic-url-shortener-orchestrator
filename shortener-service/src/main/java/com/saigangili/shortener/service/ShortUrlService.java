@@ -1,116 +1,63 @@
 package com.saigangili.shortener.service;
 
-import com.saigangili.shortener.model.UrlMapping;
-import com.saigangili.shortener.repository.UrlMappingRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import java.util.Optional;
+import com.saigangili.shortener.model.ShortUrl;
+import com.saigangili.shortener.repository.ShortUrlRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.NoSuchElementException;
+
+// NOTE: Caching, analytics event storage, rate limiting and reporting/aggregation
+// services are out of scope for this pass and are intentionally not implemented here.
 @Service
 public class ShortUrlService {
 
-    // NOTE: Caching (e.g. Redis read-through/write-through for short_code -> long_url),
-    // click analytics event persistence, aggregation/rollup services, and rate limiting
-    // are out of scope for this pass and are not implemented here.
+    private static final String ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private static final int CODE_LENGTH = 7;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
-    private static final String BASE62_ALPHABET =
-            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private static final int BASE = 62;
+    private final ShortUrlRepository shortUrlRepository;
 
-    private final UrlMappingRepository urlMappingRepository;
-
-    @PersistenceContext
-    private EntityManager entityManager;
-
-    public ShortUrlService(UrlMappingRepository urlMappingRepository) {
-        this.urlMappingRepository = urlMappingRepository;
+    public ShortUrlService(ShortUrlRepository shortUrlRepository) {
+        this.shortUrlRepository = shortUrlRepository;
     }
 
-    @Transactional
-    public UrlMapping createShortUrl(String longUrl, String customAlias, String ownerId) {
-        String shortCode;
-        boolean isCustom = customAlias != null && !customAlias.isBlank();
+    public ShortUrl createShortUrl(String originalUrl, String metadata) {
+        String code = generateUniqueCode();
+        ShortUrl shortUrl = new ShortUrl(code, originalUrl, Instant.now(), metadata);
+        return shortUrlRepository.save(shortUrl);
+    }
 
-        if (isCustom) {
-            if (urlMappingRepository.existsByShortCode(customAlias)) {
-                throw new IllegalArgumentException("Custom alias already in use: " + customAlias);
-            }
-            shortCode = customAlias;
-        } else {
-            shortCode = generateUniqueShortCode();
+    public ShortUrl getByCode(String code) {
+        return shortUrlRepository.findByCode(code)
+                .orElseThrow(() -> new NoSuchElementException("Short URL not found for code: " + code));
+    }
+
+    public void deleteByCode(String code) {
+        if (!shortUrlRepository.existsByCode(code)) {
+            throw new NoSuchElementException("Short URL not found for code: " + code);
         }
-
-        UrlMapping mapping = new UrlMapping(shortCode, longUrl, ownerId, isCustom);
-        return urlMappingRepository.save(mapping);
-        // NOTE: on successful create, a write-through cache population (short_code -> long_url)
-        // would happen here in a full implementation.
+        shortUrlRepository.deleteByCode(code);
     }
 
-    public UrlMapping getMetadata(String shortCode) {
-        return urlMappingRepository.findByShortCode(shortCode)
-                .filter(UrlMapping::isActive)
-                .orElseThrow(() -> new NoSuchElementException(shortCode));
+    public String resolveRedirectUrl(String code) {
+        return getByCode(code).getOriginalUrl();
     }
 
-    public String resolveLongUrl(String shortCode) {
-        // NOTE: in a full implementation this would first check the Redis cache
-        // for sub-100ms latency, falling back to the DB on a cache miss and
-        // populating the cache read-through.
-        UrlMapping mapping = urlMappingRepository.findByShortCode(shortCode)
-                .filter(UrlMapping::isActive)
-                .orElseThrow(() -> new NoSuchElementException(shortCode));
-        return mapping.getLongUrl();
+    private String generateUniqueCode() {
+        String code;
+        do {
+            code = generateRandomCode();
+        } while (shortUrlRepository.existsByCode(code));
+        return code;
     }
 
-    @Transactional
-    public void deleteShortUrl(String shortCode, String ownerId) {
-        UrlMapping mapping = urlMappingRepository.findByShortCode(shortCode)
-                .filter(UrlMapping::isActive)
-                .orElseThrow(() -> new NoSuchElementException(shortCode));
-
-        if (!mapping.getOwnerId().equals(ownerId)) {
-            throw new SecurityException("Not authorized to delete this short URL");
+    private String generateRandomCode() {
+        StringBuilder sb = new StringBuilder(CODE_LENGTH);
+        for (int i = 0; i < CODE_LENGTH; i++) {
+            sb.append(ALPHABET.charAt(RANDOM.nextInt(ALPHABET.length())));
         }
-
-        mapping.setStatus(UrlMapping.Status.DELETED);
-        urlMappingRepository.save(mapping);
-        // NOTE: on delete, cache invalidation for short_code -> long_url would happen here.
-    }
-
-    private String generateUniqueShortCode() {
-        // Auto-generate short codes using base62 encoding of an internally generated
-        // unique numeric ID. We use a DB sequence to avoid coordination overhead and
-        // collision-checking bottlenecks under high write volume.
-        long uniqueId = nextSequenceValue();
-        return encodeBase62(uniqueId);
-    }
-
-    private long nextSequenceValue() {
-        Object result = entityManager
-                .createNativeQuery("SELECT nextval('url_id_seq')")
-                .getSingleResult();
-        return ((Number) result).longValue();
-    }
-
-    private String encodeBase62(long value) {
-        if (value == 0) {
-            return String.valueOf(BASE62_ALPHABET.charAt(0));
-        }
-        StringBuilder sb = new StringBuilder();
-        long n = value;
-        while (n > 0) {
-            int remainder = (int) (n % BASE);
-            sb.append(BASE62_ALPHABET.charAt(remainder));
-            n /= BASE;
-        }
-        return sb.reverse().toString();
-    }
-
-    public static class NoSuchElementException extends RuntimeException {
-        public NoSuchElementException(String shortCode) {
-            super("No active short URL found for code: " + shortCode);
-        }
+        return sb.toString();
     }
 }
