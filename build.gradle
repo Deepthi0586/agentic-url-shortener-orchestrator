@@ -1,0 +1,25 @@
+// Root build file — shared config applied to every subproject.
+// Each module (orchestrator, shortener-service) has its own build.gradle
+// for module-specific dependencies and plugins.
+
+plugins {
+    id 'org.springframework.boot' version '3.3.3' apply false
+    id 'io.spring.dependency-management' version '1.1.6' apply false
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    tasks.withType(Test) {
+        useJUnitPlatform()
+    }
+}

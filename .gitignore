@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Runtime state / secrets — never commit these
+*.db
+*.sqlite
+.env
+**/application-local.yml
+llm-api-key.txt
+
+# Logs
+*.log
+!scenarios/*.log
+orchestrator-runs/
