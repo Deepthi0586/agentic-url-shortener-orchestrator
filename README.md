@@ -7,6 +7,9 @@ reviewable engineering outcome — demonstrated by using it to build a
 URL shortener service across greenfield, brownfield, and ambiguous
 scenarios, and later extended with a real security feature (JWT
 authentication) through an additional brownfield run.
+## Related project
+
+[agentic-codebase-assistant](https://github.com/Deepthi0586/agentic-codebase-assistant) — a RAG system that answers questions about a codebase using embeddings and vector search, grounded in real source files.
 
 ## Repository Structure
 
